@@ -10,6 +10,7 @@ start(ServerAtom) ->
     % - Register this process to ServerAtom
     % - Return the process ID
     gui : start(ServerAtom),
+    gui : init(),
     Pid = genserver:start(ServerAtom, 0, messagehandler()),
     Pid.
 messagehandler() -> 

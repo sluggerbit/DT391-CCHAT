@@ -2,6 +2,20 @@
 -export([start/1,stop/1]).
 %-import(genserver, [start/3, stop/1]).
 
+-record(server_st, {
+    server, % atom of the chat server
+    channels, % list of all channels PIDs
+    nicks % All connected user's nicks
+}).
+
+initial_state(ServerAtom) ->
+    #server_st {
+        server = ServerAtom,
+        channels = [],
+        nicks = []
+    }.
+
+
 % Start a new server process with the given name
 % Do not change the signature of this function.
 start(ServerAtom) ->
@@ -9,14 +23,32 @@ start(ServerAtom) ->
     % - Spawn a new process which waits for a message, handles it, then loops infinitely
     % - Register this process to ServerAtom
     % - Return the process ID
-    gui : start(ServerAtom),
-    gui : init(),
-    Pid = genserver:start(ServerAtom, 0, messagehandler()),
+    % Record = 1,
+    Pid = genserver:start(ServerAtom, initial_state(ServerAtom), fun messagehandler/2),
+%    gui : start(ServerAtom),
+%    gui : init(ServerAtom, shire),
     Pid.
-messagehandler() -> 
-    receive Msg -> 
-    io:format("received: ~p~n", [Msg]) end,
-    messagehandler().
+    
+messagehandler(State, Data) -> 
+    case Data of
+        _ -> {reply, "Hej", State}
+    end.    
+
+
+%    {join, Channel} -> 
+%        if sets: is_element(Channel, set),
+%            messagehandler()
+
+            
+% messagehandler(State, Data).
+
+%startChannel(ChannelName) ->
+%    PidChannel = genserver:start(ChannelName),
+%    PidChannel.
+
+%channelhandler() ->
+    
+%    ok.
 
 % Stop the server process registered to the given name,
 % together with any other associated processes

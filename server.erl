@@ -10,7 +10,12 @@ start(ServerAtom) ->
     % - Register this process to ServerAtom
     % - Return the process ID
     genserver:start(ServerAtom, 0, messagehandler()).
-messagehandler() -> not defined.
+
+
+messagehandler() -> 
+    receive Msg -> 
+    io:format("received: ~p~n", [Msg]) 
+    end.
 
 % Stop the server process registered to the given name,
 % together with any other associated processes

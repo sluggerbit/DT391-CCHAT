@@ -9,6 +9,7 @@ start(ServerAtom) ->
     % - Spawn a new process which waits for a message, handles it, then loops infinitely
     % - Register this process to ServerAtom
     % - Return the process ID
+    gui : start(ServerAtom),
     Pid = genserver:start(ServerAtom, 0, messagehandler()),
     Pid.
 messagehandler() -> 

@@ -11,7 +11,7 @@
 initial_state(ServerAtom) ->
     #server_st {
         server = ServerAtom,
-        channels = [],
+        channels = [{}],
         nicks = []
     }.
 
@@ -31,9 +31,16 @@ start(ServerAtom) ->
     
 messagehandler(State, Data) -> 
     case Data of
+         {join, Client, Channel} -> 
+         NewState = server = {State#server_st.server, channels = [{Channel, [Client| clients]} | State#server_st.channels], nicks = State#server_st.nicks},
+         case lists:member(element(1, {Channel, [Client]}), State#server_st.channels) of
+            true -> {reply, Channel, NewState};
+            false -> {reply, Channel, NewState}
+         end;
         _ -> {reply, "Hej", State}
     end.    
-
+% [A || {A,_,_} <- X].
+% element(N,Tuple)
 
 %    {join, Channel} -> 
 %        if sets: is_element(Channel, set),

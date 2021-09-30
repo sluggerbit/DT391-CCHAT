@@ -21,11 +21,11 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
 
 
 
-clientloop(State, Data) ->
-    receive 
-        {request, Data} ->  
-            handle(State, Data)
-    end.
+%clientloop(State, Data) ->
+%    receive 
+%        {request, Data} ->  
+%            handle(State, Data)
+%    end.
 
 
 % ah nu fattar jag vad du menar tror jag, om det bara hade gällt typ ett "ping" så hade man inte behövt ha receive i klienten
@@ -47,10 +47,13 @@ clientloop(State, Data) ->
 
 % Join channel
 handle(St, {join, Channel}) ->
-    % TODO: Implement this function
-    % {reply, ok, St} ;
-    {reply, {error, not_implemented, "join not implemented"}, St} ;
-%  fun () -> request(ClientName, {join, Channel})
+    Ref = make_ref(),
+    St#client_st.server ! {request, self(), Ref, {join, self(), Channel}},
+    receive
+        {exit, Ref, Reason} -> {reply, {error, not_implemented, Reason}, St};
+        {result, Ref, Channel} -> {reply, ok, St}
+    end;
+
 
 % Leave channel
 handle(St, {leave, Channel}) ->
@@ -62,40 +65,17 @@ handle(St, {leave, Channel}) ->
 handle(St, {message_send, Channel, Msg}) ->
     % TODO: Implement this function
 Ref = make_ref(),
-receive case Channel ! {request, self(), Ref, "Hej"} of  % ska inte client ha en request funktion?
-     {exit, Ref, Reason} -> {reply, {error, not_implemented, Reason}, St}; % vid varje case-fall ska det vara ett semikolon
-    {result, Ref, R} -> {reply, ok, St} % förutom det sista som inte ska ha något
-end.   % ska sluta med end, punkt för att det är slutet på funktionen
+St#client_st.server ! {request, self(), Ref, Msg},
+receive   
+     {exit, Ref, Reason} -> {reply, {error, not_implemented, Reason}, St}; 
+     {result, Ref, R} -> {reply, ok, St}
+end;
 
-
-% ger upp lite och äter, du kan sitta mer om du vill, lämnar det uppe, säg till om du avslutar
-
-
-
-    % Varför får vi channel i argumenten?
-    % så man kan skicka direkt till channels på servern antar jag
-    
-    % ahh ändrade till channels från server nu, aha ok
-    % får inte syntaxen att fungera riktigt den BORDE fungera såhär
-    
-    %    error
-    %else
-    % {reply, ok, St} ;
-    %{reply, {error, not_implemented, "message sending not implemented"}, St} ;
-
-             
-%   Här har jag påbörjat, jag modellerade efter hur de hanterade nytt nick precis nedanför lite men har
-%   inte fått syntaxen att gå ihop, vi ska förändra klientens status på något sätt (eller kanalens?)             
-             
-% Här tror jag vi kan skicka ett meddelande till servern, vänta på svar, om ok, returnera ok till guit, om server säger att det sket sig, returnera fel
-% tror inte vi behöver ändra klienten state, bara om vi ändrar nick, yes
-% låter rimligt, men frågan är också hur vi svarar genom att ändra klientens status bara
-% svaret är reply, {ok, state} ah ok så oförändrat bara felhantering
-
+            
 % This case is only relevant for the distinction assignment!
 % Change nick (no check, local only)
 handle(St, {nick, NewNick}) ->
-    {reply, ok, St#client_st{nick = NewNick}} ;
+    {reply, ok, St#client_st{nick = NewNick}};
 
 % ---------------------------------------------------------------------------
 % The cases below do not need to be changed...

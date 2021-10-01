@@ -11,10 +11,20 @@
 initial_state(ServerAtom) ->
     #server_st {
         server = ServerAtom,
-        channels = [{}],
+        channels = [],
         nicks = []
     }.
 
+-record(channel_st, { % atom of the channel server
+    channel, 
+    members 
+}).
+
+new_channel(ChannelAtom, Member) ->
+    #channel_st {
+        channel = ChannelAtom,
+        members = [Member]
+    }.
 
 % Start a new server process with the given name
 % Do not change the signature of this function.
@@ -30,32 +40,59 @@ start(ServerAtom) ->
     Pid.
     
 messagehandler(State, Data) -> 
-    case Data of
-         {join, Client, Channel} -> 
-         NewState = server = {State#server_st.server, channels = [{Channel, [Client| clients]} | State#server_st.channels], nicks = State#server_st.nicks},
-         case lists:member(element(1, {Channel, [Client]}), State#server_st.channels) of
-            true -> {reply, Channel, NewState};
-            false -> {reply, Channel, NewState}
+    case Data of         
+    {join, Client, Channel} -> 
+         case lists:member(Channel, State#server_st.channels) of
+            true -> Ref = make_ref(),
+                Channel ! {request, self(), Ref, {join, Client}}, 
+                receive
+                    {exit, Ref, Reason} -> {'EXIT', Reason};
+                    {result, Ref, R} -> {reply, R, State}
+                end;
+            false -> genserver:start(Channel, new_channel(Channel, Client), fun channelhandler/2), 
+                     {reply, Channel, #server_st{
+                        server = State#server_st.server, 
+                        channels = [Channel | State#server_st.channels], 
+                        nicks = State#server_st.nicks}}
          end;
-        _ -> {reply, "Hej", State}
+    {leave, Client, Channel} -> 
+        case lists:member(Channel, State#server_st.channels) of
+            true -> Ref = make_ref(),
+                Channel ! {request, self(), Ref, {leave, Client}},
+                    receive
+                        {exit, Ref, Reason} -> {'EXIT', Reason};
+                        {result, Ref, R} -> {reply, R, State}
+                    end;
+            false -> {'EXIT', "Channel does not exist in server."}
+        end;
+            _ -> {reply, "Hej", State}
     end.    
-% [A || {A,_,_} <- X].
-% element(N,Tuple)
-
-%    {join, Channel} -> 
-%        if sets: is_element(Channel, set),
-%            messagehandler()
-
-            
-% messagehandler(State, Data).
-
-%startChannel(ChannelName) ->
-%    PidChannel = genserver:start(ChannelName),
-%    PidChannel.
-
-%channelhandler() ->
     
-%    ok.
+    
+            
+    % NewClient = #server_st{
+    %        server = State#server_st.server, 
+    %        channels = [#channel_st{
+    %                channel = N#channel_st.channel, 
+    %                members = [Client|N#channel_st.members]} || N <- State#server_st.channels], 
+    %        nicks = State#server_st.nicks},
+         
+         %[element(1, N) || N <- State#server_st.channels]
+         
+    % ChannelState = new_channel(Channel, Client),
+    %     NewClientAndChannel = #server_st{
+    %         server = State#server_st.server, 
+    %         channels = [#channel_st{channel = Channel, members = [Client|#channel_st.members]} | State#server_st.channels], 
+    %         nicks = State#server_st.nicks},
+    
+    
+    
+channelhandler(ChannelState, Data) ->
+    case Data of
+        _ -> {reply, "Hej", ChannelState}
+    end.
+
+
 
 % Stop the server process registered to the given name,
 % together with any other associated processes

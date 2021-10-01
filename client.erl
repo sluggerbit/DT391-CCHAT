@@ -57,9 +57,14 @@ handle(St, {join, Channel}) ->
 
 % Leave channel
 handle(St, {leave, Channel}) ->
-    % TODO: Implement this function
+    Ref = make_ref(),
+    St#client_st.server ! {request, self(), Ref, {leave, self(), Channel}},
+    receive
+        {exit, Ref, Reason} -> {reply, {error, not_implemented, Reason}, St};
+        {result, Ref, Channel} -> {reply, ok, St}
+    end;
     % {reply, ok, St} ;
-    {reply, {error, not_implemented, "leave not implemented"}, St} ;
+    %{reply, {error, not_implemented, "leave not implemented"}, St} ;
 
 % Sending message (from GUI, to channel)
 handle(St, {message_send, Channel, Msg}) ->

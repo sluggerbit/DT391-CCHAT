@@ -344,7 +344,7 @@ join_already_joined_test() ->
     join_channel(ClientAtom, Channel),
 
     Result2 = request(ClientAtom,{join,Channel}),
-    assert_error(to_string(ClientAtom)++" joins "++Channel, Result2, user_already_joined).
+    assert_error(to_string(ClientAtom)++" joins "++ Channel, Result2, user_already_joined).
 
 % Writing when not joined
 write_not_joined1_test() ->
@@ -394,7 +394,7 @@ leave_not_joined_test() ->
     % Client 2
     {_Pid2, _Nick2, ClientAtom2} = new_client(),
     Result2 = request(ClientAtom2,{leave,Channel}),
-    assert_error(to_string(ClientAtom2)++" leaving "++Channel, Result2, user_not_joined).
+    assert_error(to_string(ClientAtom2)++" leaving " ++Channel, Result2, user_not_joined).
 
 % Leaving when no server
 leave_no_server_test() ->

@@ -47,34 +47,27 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
 
 % Join channel
 handle(St, {join, Channel}) ->
-    Ref = make_ref(),
-    St#client_st.server ! {request, self(), Ref, {join, self(), Channel}},
-    receive
-        {exit, Ref, Reason} -> {reply, {error, not_implemented, Reason}, St};
-        {result, Ref, Channel} -> {reply, ok, St}
+    try genserver:request(St#client_st.server, {join, self(), Channel}) of
+        Result -> {reply, ok, Result}
+    catch
+       {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St}
     end;
-
-
+        
 % Leave channel
 handle(St, {leave, Channel}) ->
-    Ref = make_ref(),
-    St#client_st.server ! {request, self(), Ref, {leave, self(), Channel}},
-    receive
-        {exit, Ref, Reason} -> {reply, {error, not_implemented, Reason}, St};
-        {result, Ref, Channel} -> {reply, ok, St}
+    try genserver:request(St#client_st.server, {leave, self(), Channel}) of
+        Result -> {reply, ok, Result}
+    catch
+       {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St}
     end;
-    % {reply, ok, St} ;
-    %{reply, {error, not_implemented, "leave not implemented"}, St} ;
-
+    
 % Sending message (from GUI, to channel)
 handle(St, {message_send, Channel, Msg}) ->
-    % TODO: Implement this function
-Ref = make_ref(),
-St#client_st.server ! {request, self(), Ref, Msg},
-receive   
-     {exit, Ref, Reason} -> {reply, {error, not_implemented, Reason}, St}; 
-     {result, Ref, R} -> {reply, ok, St}
-end;
+    try genserver:request(Channel, {message, self(), Msg}) of
+        Result -> {reply, ok, Result}
+    catch
+       {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St}
+    end;
 
             
 % This case is only relevant for the distinction assignment!

@@ -35,37 +35,34 @@ start(ServerAtom) ->
     % - Return the process ID
     % Record = 1,
     Pid = genserver:start(ServerAtom, initial_state(ServerAtom), fun messagehandler/2),
-%    gui : start(ServerAtom),
-%    gui : init(ServerAtom, shire),
     Pid.
     
+
 messagehandler(State, Data) -> 
     case Data of         
     {join, Client, Channel} -> 
          case lists:member(Channel, State#server_st.channels) of
-            true -> Ref = make_ref(),
-                Channel ! {request, self(), Ref, {join, Client}}, 
-                receive
-                    {exit, Ref, Reason} -> {'EXIT', Reason};
-                    {result, Ref, R} -> {reply, R, State}
-                end;
-            false -> genserver:start(Channel, new_channel(Channel, Client), fun channelhandler/2), 
-                     {reply, Channel, #server_st{
+            true -> try genserver:request(Channel, {join, Client}) of
+                        Result -> {reply, Result, State}
+                    catch 
+                        {'EXIT', Reason} -> {'EXIT', Reason}
+                    end;
+            _ -> Pid = spawn(fun() -> genserver:loop(new_channel(Channel, Client), fun channelhandler/2) end),
+                {reply, ok, #server_st{
                         server = State#server_st.server, 
-                        channels = [Channel | State#server_st.channels], 
-                        nicks = State#server_st.nicks}}
+                        channels = [Pid | State#server_st.channels], 
+                        nicks = State#server_st.nicks}}             
          end;
     {leave, Client, Channel} -> 
         case lists:member(Channel, State#server_st.channels) of
-            true -> Ref = make_ref(),
-                Channel ! {request, self(), Ref, {leave, Client}},
-                    receive
-                        {exit, Ref, Reason} -> {'EXIT', Reason};
-                        {result, Ref, R} -> {reply, R, State}
-                    end;
+            true -> try genserver:request(Channel, {leave, Client}) of
+                Result -> {reply, Result, State}
+                catch 
+                    {'EXIT', Reason} -> {'EXIT', Reason} 
+                end;
             false -> {'EXIT', "Channel does not exist in server."}
         end;
-            _ -> {reply, "Hej", State}
+    _ -> {'EXIT', "Not a valid server request"}
     end.    
     
     
@@ -89,7 +86,17 @@ messagehandler(State, Data) ->
     
 channelhandler(ChannelState, Data) ->
     case Data of
-        _ -> {reply, "Hej", ChannelState}
+        {join, Client} -> 
+            case lists:member(Client, ChannelState#channel_st.members) of
+                true -> {reply, {error, user_already_joined, "tried to join while already a member in channel"}, ChannelState};
+                _ -> {reply, ChannelState#channel_st.channel, #channel_st{channel = ChannelState#channel_st.channel, members = [Client | ChannelState#channel_st.members]}}
+            end;
+        {leave, Client} -> 
+            case lists:member(Client, ChannelState#channel_st.members) of
+                true -> {reply, ChannelState#channel_st.channel, #channel_st{channel = ChannelState#channel_st.channel, members = lists:remove(Client, ChannelState#channel_st.members)}};
+                _ -> {reply, {error, user_not_joined, "tried to leave a channel while not a member of that channel"}, ChannelState} 
+            end;
+        _ -> {'EXIT', "Not a valid channel request."}
     end.
 
 

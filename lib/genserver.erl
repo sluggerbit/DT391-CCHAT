@@ -1,5 +1,5 @@
 -module(genserver).
--export([start/3, stop/1, request/2, request/3, update/2]).
+-export([start/3, stop/1, request/2, request/3, update/2, loop/2]).
 
 % Spawn a process and register it with a given atom
 % - Atom is the atom to register the process to

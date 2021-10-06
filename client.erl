@@ -48,7 +48,7 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
 % Join channel
 handle(St, {join, Channel}) ->
     try genserver:request(St#client_st.server, {join, self(), Channel}) of
-        Result -> {reply, ok, Result}
+        Result -> {reply, ok, St}
     catch
        {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St}
     end;
@@ -56,7 +56,7 @@ handle(St, {join, Channel}) ->
 % Leave channel
 handle(St, {leave, Channel}) ->
     try genserver:request(St#client_st.server, {leave, self(), Channel}) of
-        Result -> {reply, ok, Result}
+        Result -> {reply, ok, St}
     catch
        {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St}
     end;
@@ -64,7 +64,7 @@ handle(St, {leave, Channel}) ->
 % Sending message (from GUI, to channel)
 handle(St, {message_send, Channel, Msg}) ->
     try genserver:request(Channel, {message, self(), Msg}) of
-        Result -> {reply, ok, Result}
+        Result -> {reply, ok, St}
     catch
        {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St}
     end;

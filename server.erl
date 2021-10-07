@@ -1,6 +1,7 @@
 -module(server).
 -export([start/1,stop/1]).
 -import(proplists, [lookup/2]).
+-import(lists,[delete/2]).
 
 -record(server_st, {
     server, % atom of the chat server
@@ -50,20 +51,21 @@ messagehandler(State, Data) ->
                 {reply, NewPid, #server_st{
                     server = State#server_st.server,
                     channels = [{Channel, NewPid} | State#server_st.channels],
-                    nicks = State#server_st.nicks}}             
+                    nicks = State#server_st.nicks}}
+                         
          end;
     {leave, Client, Channel} -> 
         case proplists:lookup(Channel, State#server_st.channels) of
             {Channel, Pid} -> try genserver:request(Pid, {leave, Client}) of
                 Result -> {reply, Result, State}
                     catch 
-                        %{'EXIT', Reason} -> {'EXIT', Reason}
                         {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, State}
                     end;
             _  -> {reply, {error, user_not_joined, "Channel does not exist in server."}, State}
         end;
     _  -> {reply, {error, user_not_joined, "Not a valid server request"}, State}
-    end.       
+    end.    
+    
     
 channelhandler(ChannelState, Data) ->
     case Data of
@@ -79,24 +81,30 @@ channelhandler(ChannelState, Data) ->
             end;
         {message, Client, Nick, Msg} -> 
             case lists:member(Client, ChannelState#channel_st.members) of
-                true -> spawn(fun() -> genserver:request(Client , {message_receive, ChannelState#channel_st.channel, Nick, Msg}) end),
-                    {reply, ok, ChannelState};
+                true -> spawn(fun() -> genserver:request(Client, {message_receive, ChannelState#channel_st.channel, Msg}) end),
+                        case lists:member(Client, ChannelState#channel_st.members) of
+                            [] -> {reply, ok, ChannelState};
+                            _ -> sendMsgToClients(ChannelState, Msg, Nick, lists:delete(Client, ChannelState#channel_st.members)), {reply, ok, ChannelState}
+                            end;
+                %true -> sendMsgToClients(ChannelState, Msg, Nick, ChannelState#channel_st.members), {reply, ok, ChannelState};
                 _ -> {reply, {error, user_not_joined ,"user not a part of channel"}, ChannelState}
                 end;
-        _ -> {reply, {error, server_not_reached, "not a valid channel request"}, ChannelState} 
+        _ -> {reply, {error, server_not_reached, "not a valid channel request"}, ChannelState}
     end.
 
 
-
 sendMsgToClients(St, Msg, Nick, [Member | Members]) -> 
-    case genserver:request(Member, {message_receive, St#channel_st.channel, Nick, Msg}) of
-        ok -> sendMsgToClients(St, Msg, Nick, Members);
-        _ -> {reply, {error, server_not_reached, "no reply from server"}, St}
-    end;
+     spawn(fun() -> genserver:request(Member, {message_receive, St#channel_st.channel, Nick, Msg}), {reply, ok, St}, sendMsgToClients(St, Msg, Nick, Members) end);
     % {message_receive, Channel, Nick, Msg}
-sendMsgToClients(St, _, _, []) -> 
-    {reply, ok, St}.
-
+    sendMsgToClients(St, _, _, []) -> 
+        {reply, ok, St}.
+    
+   %for(0,_) -> 
+   %[]; 
+   
+  % for(N,Term) when N > 0 -> 
+  % io:fwrite("Hello~n"), 
+  % [Term|for(N-1,Term)]. 
 
 % Stop the server process registered to the given name,
 % together with any other associated processes

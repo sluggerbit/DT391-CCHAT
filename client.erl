@@ -6,7 +6,8 @@
 -record(client_st, {
     gui, % atom of the GUI process
     nick, % nick/username of the client
-    server % atom of the chat server
+    server, % atom of the chat server
+    channelList
 }).
 
 % Return an initial state record. This is called from GUI.
@@ -15,7 +16,8 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
     #client_st {
         gui = GUIAtom,
         nick = Nick,
-        server = ServerAtom
+        server = ServerAtom,
+        channelList = []
     }.
 
 
@@ -48,7 +50,7 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
 % Join channel
 handle(St, {join, Channel}) ->
     try genserver:request(St#client_st.server, {join, self(), Channel}) of
-        Result -> {reply, ok, St}
+        Result -> {reply, ok, St#client_st{channelList = [{Channel, Result} | St#client_st.channelList]}}
     catch
        {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St}
     end;
@@ -63,11 +65,15 @@ handle(St, {leave, Channel}) ->
     
 % Sending message (from GUI, to channel)
 handle(St, {message_send, Channel, Msg}) ->
-    try genserver:request(Channel, {message, self(), Msg}) of
+    case proplist:lookup(Channel, St#client_st.channelList) of
+        {Channel, Pid} -> try genserver:request(Pid, {message, self(), Msg}) of
         Result -> {reply, ok, St}
-    catch
-       {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St}
+            catch
+        {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St}
+            end;
+        _ -> {reply, {error, user_not_joined, "No such channel exists"}}
     end;
+    
 
             
 % This case is only relevant for the distinction assignment!

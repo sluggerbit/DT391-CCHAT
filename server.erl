@@ -37,7 +37,7 @@ start(ServerAtom) ->
     Pid = genserver:start(ServerAtom, initial_state(ServerAtom), fun messagehandler/2),
     Pid.
     
-
+   
 messagehandler(State, Data) -> 
     case Data of         
     {join, Client, Channel} -> 
@@ -69,9 +69,12 @@ messagehandler(State, Data) ->
             {Channel, Pid} -> try genserver:request(Pid, {leave, Client}) of
                 Result -> {reply, Result, State}
                     catch 
-                        {'EXIT', Reason} -> {'EXIT', Reason}
+                        %{'EXIT', Reason} -> {'EXIT', Reason}
+                        {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, State}
                     end;
-            _ -> {'EXIT', "Channel does not exist in server."}
+            _  -> {reply, {error, user_not_joined, "Channel does not exist in server."}, State}
+            %_ -> {'EXIT', {user_not_joined, "Channel does not exist in server."}}
+            % {reply, {error, user_not_joined, Reason}, State}
         %case lists:member(Channel, State#server_st.channels) of
         %    true -> try genserver:request(Channel, {leave, Client}) of
         %        Result -> {reply, Result, State}
@@ -80,7 +83,8 @@ messagehandler(State, Data) ->
         %        end;
         %    false -> {'EXIT', "Channel does not exist in server."}
         end;
-    _ -> {'EXIT', "Not a valid server request"}
+    %_ -> {'EXIT', "Not a valid server request"}
+    _  -> {reply, {error, user_not_joined, "Not a valid server request"}, State}
     end.    
     
     
@@ -114,10 +118,28 @@ channelhandler(ChannelState, Data) ->
                 true -> {reply, ChannelState#channel_st.channel, #channel_st{channel = ChannelState#channel_st.channel, members = lists:delete(Client, ChannelState#channel_st.members)}};
                 _ -> {reply, {error, user_not_joined, "tried to leave a channel while not a member of that channel"}, ChannelState} 
             end;
-        _ -> {'EXIT', "Not a valid channel request."}
+        {message, Client, Msg} -> 
+            case lists:member(Client, ChannelState#channel_st.members) of
+                true -> sendMsgToClients(Msg, ChannelState#channel_st.members),
+                        {reply, ok, ChannelState};
+                _ -> {reply, {error, user_not_joined ,"user not a part of channel"}, ChannelState}
+                end;
+        _ -> {reply, {error, server_not_reached, "not a valid channel request"}, ChannelState} 
     end.
 
 
+sendMsgToClients(Msg, [Member | Members]) -> 
+    genserver:request(Member, {message, self(), Msg}), 
+    sendMsgToClients(Msg, Members);
+sendMsgToClients(_, []) -> 
+    ok.
+    
+   %for(0,_) -> 
+   %[]; 
+   
+  % for(N,Term) when N > 0 -> 
+  % io:fwrite("Hello~n"), 
+  % [Term|for(N-1,Term)]. 
 
 % Stop the server process registered to the given name,
 % together with any other associated processes

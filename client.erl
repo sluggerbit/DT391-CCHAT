@@ -1,5 +1,6 @@
 -module(client).
 -export([handle/2, initial_state/3]).
+-import(proplists, [lookup/2]).
 
 % This record defines the structure of the state of a client.
 % Add whatever other fields you need.
@@ -58,19 +59,19 @@ handle(St, {join, Channel}) ->
 % Leave channel
 handle(St, {leave, Channel}) ->
     try genserver:request(St#client_st.server, {leave, self(), Channel}) of
-        Result -> {reply, ok, St}
+        Result -> {reply, Result, St}
     catch
        {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St}
     end;
     
 % Sending message (from GUI, to channel)
 handle(St, {message_send, Channel, Msg}) ->
-    case proplist:lookup(Channel, St#client_st.channelList) of
-        {Channel, Pid} -> try genserver:request(Pid, {message, self(), Msg}) of
-        Result -> {reply, ok, St}
-            catch
-        {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St}
-            end;
+    case proplists:lookup(Channel, St#client_st.channelList) of
+        {Channel, Pid} -> try genserver:request(Pid, {message, self(), St#client_st.nick, Msg}) of
+            Result -> {reply, Result, St}
+                catch
+                {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St}
+                end;
         _ -> {reply, {error, user_not_joined, "No such channel exists"}}
     end;
     

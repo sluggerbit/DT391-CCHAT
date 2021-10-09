@@ -50,32 +50,54 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
 
 % Join channel
 handle(St, {join, Channel}) ->
-    try genserver:request(St#client_st.server, {join, self(), Channel}) of
+    case catch genserver:request(St#client_st.server, {join, self(), Channel}) of
+        {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St};
+        {error, user_already_joined, ErrorMsg} -> {reply, {error, user_already_joined, ErrorMsg}, St};
         Result -> {reply, ok, St#client_st{channelList = [{Channel, Result} | St#client_st.channelList]}}
-    catch
-       {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St}
-    end;
-        
+   end;   
+ 
+% Join channel
+%handle(St, {join, Channel}) ->
+%    try genserver:request(St#client_st.server, {join, self(), Channel}) of        
+%        Result -> {reply, ok, St#client_st{channelList = [{Channel, Result} | St#client_st.channelList]}}
+%    catch 
+%        exit:{'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St};
+%        error:{error, user_already_joined, ErrorMsg} -> {reply, {error, user_already_joined, ErrorMsg}, St}
+%    end;    
+ 
 % Leave channel
 handle(St, {leave, Channel}) ->
-    try genserver:request(St#client_st.server, {leave, self(), Channel}) of
-        Result -> {reply, Result, St}
-    catch
-       {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St}
+    case catch genserver:request(St#client_st.server, {leave, self(), Channel}) of
+        {'EXIT', _} -> {reply, ok, St#client_st{channelList = proplists:delete(Channel, St#client_st.channelList)}};
+        %{'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St};
+        {error, user_not_joined, ErrorMsg} -> {reply, {error, user_not_joined, ErrorMsg}, St};
+        Result -> {reply, ok, St#client_st{channelList = proplists:delete(Result, St#client_st.channelList)}}
     end;
     
 % Sending message (from GUI, to channel)
 handle(St, {message_send, Channel, Msg}) ->
-    case proplists:lookup(Channel, St#client_st.channelList) of
-        {Channel, Pid} -> try genserver:request(Pid, {message, self(), St#client_st.nick, Msg}) of
-            Result -> {reply, Result, St}
-                catch
-                {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St}
-                end;
-        _ -> {reply, {error, user_not_joined, "No such channel exists"}}
+    case catch genserver:request(St#client_st.server, {checkChannel, Channel}) of
+            true -> case proplists:lookup(Channel, St#client_st.channelList) of
+                    {Channel, Pid} ->   case catch genserver:request(Pid, {message, self(), St#client_st.nick, Msg}) of
+                                            ok -> {reply, ok, St};
+                                            {error, user_not_joined, ErrorText} -> {reply, {error, user_not_joined, ErrorText}, St};
+                                            {error, server_not_reached, ErrorText} -> {reply, {error, server_not_reached, ErrorText}, St};
+                                            Result -> {reply, {error, server_not_reached, Result}, St}
+                                        end;  
+                    _ ->  {reply, {error, user_not_joined, "User has not joined channel yet"}, St}
+                    end;
+            %{'EXIT', _} -> {reply, {error, server_not_reached, "Server timed"}, St};        
+            {'EXIT', _} -> case proplists:lookup(Channel, St#client_st.channelList) of
+                                            {Channel, Pid} ->   case catch genserver:request(Pid, {message, self(), St#client_st.nick, Msg}) of
+                                                                    {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St};
+                                                                    Result -> {reply, Result, St}
+                                                                end;
+                                                _ ->  {reply, {error, user_not_joined, "User has not joined channel yet"}, St}
+                                        end;    
+            false -> {reply, {error, server_not_reached, "No such channel exists"}, St}
     end;
     
-
+%
             
 % This case is only relevant for the distinction assignment!
 % Change nick (no check, local only)
@@ -101,5 +123,5 @@ handle(St, quit) ->
     {reply, ok, St} ;
 
 % Catch-all for any unhandled requests
-handle(St, Data) ->
+handle(St, _) ->
     {reply, {error, not_implemented, "Client does not handle this command"}, St} .

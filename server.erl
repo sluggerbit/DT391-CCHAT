@@ -38,15 +38,27 @@ start(ServerAtom) ->
     
    
 messagehandler(State, Data) -> 
-    case Data of         
+    case Data of 
+    {stopChannel} ->
+        lists:foreach(fun stopChannel/1, State#server_st.channels),
+        {reply, ok, State#server_st{channels = []}};
+        
+    {checkChannel, Channel} -> 
+        case proplists:lookup(Channel, State#server_st.channels) of
+            {Channel, _} -> {reply, true, State};
+            _ -> {reply, false, State}
+        end;        
     {join, Client, Channel} -> 
         case proplists:lookup(Channel, State#server_st.channels) of
             {Channel, Pid} -> try genserver:request(Pid, {join, Client}) of
-                Result -> {reply, Pid, State}
+                {error, user_already_joined, ErrorMsg} -> {reply, {error, user_already_joined, ErrorMsg}, State};
+                _ -> {reply, Pid, State}
                 catch 
                     {'EXIT', Reason} -> {'EXIT', Reason}
                 end;
             _ -> NewPid = spawn(fun() -> genserver:loop(new_channel(Channel, Client), fun channelhandler/2) end),
+            %catch(unregister(Channel)),
+            %register(Channel, NewPid),
                 {reply, NewPid, #server_st{
                     server = State#server_st.server,
                     channels = [{Channel, NewPid} | State#server_st.channels],
@@ -57,7 +69,7 @@ messagehandler(State, Data) ->
             {Channel, Pid} -> try genserver:request(Pid, {leave, Client}) of
                 Result -> {reply, Result, State}
                     catch 
-                        %{'EXIT', Reason} -> {'EXIT', Reason}
+                        % {'EXIT', Reason} -> {'EXIT', Reason}
                         {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, State}
                     end;
             _  -> {reply, {error, user_not_joined, "Channel does not exist in server."}, State}
@@ -79,23 +91,52 @@ channelhandler(ChannelState, Data) ->
             end;
         {message, Client, Nick, Msg} -> 
             case lists:member(Client, ChannelState#channel_st.members) of
-                true -> spawn(fun() -> genserver:request(Client , {message_receive, ChannelState#channel_st.channel, Nick, Msg}) end),
-                    {reply, ok, ChannelState};
+                true ->  spawnMsgRec(ChannelState, Msg, Nick, lists:delete(Client, ChannelState#channel_st.members));
                 _ -> {reply, {error, user_not_joined ,"user not a part of channel"}, ChannelState}
-                end;
+            end;
         _ -> {reply, {error, server_not_reached, "not a valid channel request"}, ChannelState} 
     end.
+% case lists:member(From, UserPids) of
+%            % spawn a new process with a listcomprehension
+%            true  -> [spawn(fun()-> Helper(Client) end) || Client <- UserPids , Client /= From],
+%                     {reply, ok, UserPids};
+%            false -> {reply, user_not_joined, UserPids}
+%    end;
+
+%sendMsgToClients(St, Msg, Nick, [Member | Members]) -> 
+%        case catch genserver:request(Member, {message_receive, St#channel_st.channel, Nick, Msg}) of 
+%            {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St};
+%            _ -> spawn(fun()-> sendMsgToClients(St, Msg, Nick, Members) end)
+%        end;
+%           sendMsgToClients(St, _, _, []) -> {reply, ok, St}.
+           
+         
+
+spawnMsgRec(St, Msg, Nick, [Member | Members]) -> spawnMsg(St, Member, Nick, Msg), spawnMsgRec(St, Msg, Nick, Members);
+spawnMsgRec(St, _, _, []) -> {reply, ok, St}.
+
+spawnMsg(St, Client, Nick, Msg) -> spawn(fun() -> sendAMsg(St, Client, Nick, Msg) end).
+
+sendAMsg(St, Client, Nick, Msg) -> case genserver:request(Client, {message_receive, St#channel_st.channel, Nick, Msg}) of
+    ok -> exit(normal);
+    _ -> exit("not normal")
+end.
 
 
-
-sendMsgToClients(St, Msg, Nick, [Member | Members]) -> 
-    case genserver:request(Member, {message_receive, St#channel_st.channel, Nick, Msg}) of
-        ok -> sendMsgToClients(St, Msg, Nick, Members);
-        _ -> {reply, {error, server_not_reached, "no reply from server"}, St}
-    end;
+    
+    
+    % end)
+    
+    
+    %case genserver:request(Member, {message_receive, St#channel_st.channel, Nick, Msg}) of
+    %    ok -> sendMsgToClients(St, Msg, Nick, Members);
+    %    _ -> {reply, {error, server_not_reached, "no reply from server"}, St}
+    %end;
     % {message_receive, Channel, Nick, Msg}
-sendMsgToClients(St, _, _, []) -> 
-    {reply, ok, St}.
+stopChannel({_, Pid}) -> Pid ! stop , ok. 
+    
+
+
 
 
 % Stop the server process registered to the given name,
@@ -103,6 +144,8 @@ sendMsgToClients(St, _, _, []) ->
 stop(ServerAtom) -> 
     % TODO Implement function
     % Return ok
+    genserver:request(ServerAtom, {stopChannels}),
+    % lists:foreach(fun , St#server_st.channels),
     genserver:stop(ServerAtom),
     ok.
     

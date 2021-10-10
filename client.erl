@@ -2,13 +2,15 @@
 -export([handle/2, initial_state/3]).
 -import(proplists, [lookup/2]).
 
+% -------------------- RECORDS ------------------------------      
+
 % This record defines the structure of the state of a client.
 % Add whatever other fields you need.
 -record(client_st, {
     gui, % atom of the GUI process
     nick, % nick/username of the client
     server, % atom of the chat server
-    channelList
+    channelList % list of channels client is a member of
 }).
 
 % Return an initial state record. This is called from GUI.
@@ -20,87 +22,83 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
         server = ServerAtom,
         channelList = []
     }.
-
-
-
-
-%clientloop(State, Data) ->
-%    receive 
-%        {request, Data} ->  
-%            handle(State, Data)
-%    end.
-
-
-% ah nu fattar jag vad du menar tror jag, om det bara hade gällt typ ett "ping" så hade man inte behövt ha receive i klienten
-% dvs att det kommer direkt tillbaka till samma Ref
-% jo verkar som dom startar en gemensam process där för gui och client, för client:handle/2 hanterar det den tar emot och 
-% använder client state som state, så vi behöver nog inte mer server där om inte vi ska ha en per channel, fast behövs nog inte maybe idk 
-
-
-% om du kollar där nere vid handle msg
-
-
-% handle/2 handles each kind of request from GUI
-% Parameters:
-%   - the current state of the client (St)
-%   - request data from GUI
-% Must return a tuple {reply, Data, NewState}, where:
-%   - Data is what is sent to GUI, either the atom `ok` or a tuple {error, Atom, "Error message"}
-%   - NewState is the updated state of the client
+    
+% -------------------- HANDLE FUNCTIONS ------------------------------          
 
 % Join channel
 handle(St, {join, Channel}) ->
+    % Tries to join channel
     case catch genserver:request(St#client_st.server, {join, {self(), St#client_st.nick}, Channel}) of
+        %--------- ERRORS  
+        % Server is unreachable
         {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St};
-        {error, user_already_joined, ErrorMsg} -> {reply, {error, user_already_joined, ErrorMsg}, St};
+        % Client is already a member of channel
+        user_already_joined -> {reply, {error, user_already_joined, "Client is already a member of the channel"}, St};
+        
+        %--------- SUCCESS  
+        % Succesfully joined
         Result -> {reply, ok, St#client_st{channelList = [{Channel, Result} | St#client_st.channelList]}}
    end;   
  
-% Join channel
-%handle(St, {join, Channel}) ->
-%    try genserver:request(St#client_st.server, {join, self(), Channel}) of        
-%        Result -> {reply, ok, St#client_st{channelList = [{Channel, Result} | St#client_st.channelList]}}
-%    catch 
-%        exit:{'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St};
-%        error:{error, user_already_joined, ErrorMsg} -> {reply, {error, user_already_joined, ErrorMsg}, St}
-%    end;    
- 
 % Leave channel
 handle(St, {leave, Channel}) ->
+    % Tries to leave channel
     case catch genserver:request(St#client_st.server, {leave, self(), Channel}) of
+        %--------- ERRORS    
+        % Client is not a member of channel
+        user_not_joined -> {reply, {error, user_not_joined, "Client is not a member of this channel."}, St};
+        % Channel is unreachable
+        {error, server_not_reached, Reason} -> {reply, {error, server_not_reached, Reason}, St};
+            
+        %--------- SUCCESS
+        % Server is unreachable, successfully leaves channel
         {'EXIT', _} -> {reply, ok, St#client_st{channelList = proplists:delete(Channel, St#client_st.channelList)}};
-        %{'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St};
-        {error, user_not_joined, ErrorMsg} -> {reply, {error, user_not_joined, ErrorMsg}, St};
+        % Successfully leaves channel
         Result -> {reply, ok, St#client_st{channelList = proplists:delete(Result, St#client_st.channelList)}}
     end;
     
 % Sending message (from GUI, to channel)
 handle(St, {message_send, Channel, Msg}) ->
+    % Checks if channel exists
     case catch genserver:request(St#client_st.server, {checkChannel, Channel}) of
-            true -> case proplists:lookup(Channel, St#client_st.channelList) of
-                        {Channel, Pid} ->   case catch genserver:request(Pid, {message, self(), St#client_st.nick, Msg}) of
-                                ok -> {reply, ok, St};
-                                {error, user_not_joined, ErrorText} -> {reply, {error, user_not_joined, ErrorText}, St};
-                                {error, server_not_reached, ErrorText} -> {reply, {error, server_not_reached, ErrorText}, St};
-                                Result -> {reply, {error, server_not_reached, Result}, St}
-                            end;  
-                        _ ->  {reply, {error, user_not_joined, "User has not joined channel yet"}, St}
-                    end;       
-            {'EXIT', _} -> case proplists:lookup(Channel, St#client_st.channelList) of
+            % Channel has not yet been created
+            false -> {reply, {error, server_not_reached, "No such channel exists"}, St};
+            % Server is unreachable, and/or channel exists
+            _ -> case proplists:lookup(Channel, St#client_st.channelList) of
+                                            % Tries to send a message to channel
                                             {Channel, Pid} ->   case catch genserver:request(Pid, {message, self(), St#client_st.nick, Msg}) of
+                                                                    %--------- SUCCESS
+                                                                    % Succesfully sent a message
+                                                                    ok -> {reply, ok, St};
+                                                                    
+                                                                    %--------- ERRORS 
+                                                                    % Channel process is unreachable
                                                                     {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St};
+                                                                    % Client not a part of channels member list
+                                                                    user_not_joined -> {reply, {error, user_not_joined, "User is not part of channel"}, St};
+                                                                    % Sent an invalid request to channel
+                                                                    server_not_reached -> {reply, server_not_reached, "not a valid channel request"};
+                                                                    % Error code catch-all
                                                                     Result -> {reply, Result, St}
                                                                 end;
                                                 _ ->  {reply, {error, user_not_joined, "User has not joined channel yet"}, St}
-                                        end;    
-            false -> {reply, {error, server_not_reached, "No such channel exists"}, St}
+                                        end
     end;
             
 % This case is only relevant for the distinction assignment!
 % Change nick (no check, local only)
-handle(St, {nick, NewNick}) -> case genserver:request(St#client_st.server, {nick, St#client_st.nick, NewNick}) of 
+handle(St, {nick, NewNick}) -> 
+% Tries to change nick
+case genserver:request(St#client_st.server, {nick, St#client_st.nick, NewNick}) of 
+        %--------- SUCCESS
+        % Successfully changed nick
         ok -> {reply, ok, St#client_st{nick = NewNick}};
-        _ -> {reply, {error, nick_taken, "Nick already taken."}, St}
+        
+        %--------- ERRORS
+        % Nick already taken
+        nick_taken -> {reply, {error, nick_taken, "Nick already taken."}, St};
+        % Server is unreachable
+        {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St}
     end;
 
 % ---------------------------------------------------------------------------

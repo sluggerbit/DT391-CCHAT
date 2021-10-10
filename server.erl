@@ -44,55 +44,57 @@ start(ServerAtom) ->
 %   - returns a triple: reply atom, response message content, new server state 
 messagehandler(St, Data) -> 
     case Data of 
-    
-    % Checks if nick already exists in server
-    {nick, OldNick, NewNick} -> case lists:member(NewNick, St#server_st.nicks) of
-        true -> {reply, nick_taken, St};
-        _ -> {reply, ok, St#server_st{nicks = [NewNick | lists:delete(OldNick, St#server_st.nicks)]}}
-        end; 
-        
-    % Sends a stop message to all channels in server
-    stopChannels ->
-        lists:foreach(fun stopChannel/1, St#server_st.channels),
-        {reply, ok, St#server_st{channels = []}};
-        
-    % Checks if channel exists in server    
-    {checkChannel, Channel} -> 
-        case proplists:lookup(Channel, St#server_st.channels) of
-            {Channel, _} -> {reply, true, St};
-            _ -> {reply, false, St}
-        end;       
-         
-    % Join channel
-    {join, {Client, Nick}, Channel} -> 
-        % Checks if channel already exists
-        case proplists:lookup(Channel, St#server_st.channels) of
-            {Channel, Pid} -> try genserver:request(Pid, {join, Client}) of
-                {error, user_already_joined, ErrorMsg} -> {reply, {error, user_already_joined, ErrorMsg}, St};
-                _ -> {reply, Pid, St#server_st{nicks = [Nick | St#server_st.nicks]}}
-                catch 
-                    {'EXIT', Reason} -> {'EXIT', Reason}
-                end;
-            % If no channel exists, spawns a new channel process
-            _ -> NewPid = spawn(fun() -> genserver:loop(new_channel(Channel, Client), fun channelhandler/2) end),
-                {reply, NewPid, #server_st{channels = [{Channel, NewPid} | St#server_st.channels], nicks = [Nick | St#server_st.nicks]}}         
-         end;
-         
-    % Leave channel
-    {leave, Client, Channel} -> 
-        % Checks if channel already exists
-        case proplists:lookup(Channel, St#server_st.channels) of
-            % If it exists, requests /leave from that channel
-            {Channel, Pid} -> try genserver:request(Pid, {leave, Client}) of
-                Result -> {reply, Result, St}
+        % Checks if nick already exists in server
+        {nick, OldNick, NewNick} -> 
+            case lists:member(NewNick, St#server_st.nicks) of
+                true -> {reply, nick_taken, St};
+                _ -> {reply, ok, St#server_st{nicks = [NewNick | lists:delete(OldNick, St#server_st.nicks)]}}
+            end; 
+
+        % Sends a stop message to all channels in server
+        stopChannels ->
+            lists:foreach(fun stopChannel/1, St#server_st.channels),
+            {reply, ok, St#server_st{channels = []}};
+
+        % Checks if channel exists in server    
+        {checkChannel, Channel} -> 
+            case proplists:lookup(Channel, St#server_st.channels) of
+                {Channel, _} -> {reply, true, St};
+                _ -> {reply, false, St}
+            end;       
+
+        % Join channel
+        {join, {Client, Nick}, Channel} -> 
+            % Checks if channel already exists
+            case proplists:lookup(Channel, St#server_st.channels) of
+                {Channel, Pid} -> 
+                    try genserver:request(Pid, {join, Client}) of
+                    {error, user_already_joined, ErrorMsg} -> {reply, {error, user_already_joined, ErrorMsg}, St};
+                    _ -> {reply, Pid, St#server_st{nicks = [Nick | St#server_st.nicks]}}
                     catch 
-                        {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St}
+                        {'EXIT', Reason} -> {'EXIT', Reason}
                     end;
-            _  -> {reply, user_not_joined, St}
-        end;
-    _  -> {reply, server_not_reached, St}
+                % If no channel exists, spawn a new channel process
+                _ -> NewPid = spawn(fun() -> genserver:loop(new_channel(Channel, Client), fun channelhandler/2) end),
+                    {reply, NewPid, #server_st{channels = [{Channel, NewPid} | St#server_st.channels], nicks = [Nick | St#server_st.nicks]}}         
+             end;
+
+        % Leave channel
+        {leave, Client, Channel} -> 
+            % Checks if channel already exists
+            case proplists:lookup(Channel, St#server_st.channels) of
+                % If it exists, requests /leave from that channel
+                {Channel, Pid} -> 
+                    try genserver:request(Pid, {leave, Client}) of
+                        Result -> {reply, Result, St}
+                    catch 
+                            {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St}
+                    end;
+                _  -> {reply, user_not_joined, St}
+            end;
+        _  -> {reply, server_not_reached, St}
     end.       
-    
+
 % -------------------- CHANNEL FUNCTIONS ------------------------------
 
 % Channel loop

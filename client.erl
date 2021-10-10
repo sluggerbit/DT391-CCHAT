@@ -50,7 +50,7 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
 
 % Join channel
 handle(St, {join, Channel}) ->
-    case catch genserver:request(St#client_st.server, {join, self(), Channel}) of
+    case catch genserver:request(St#client_st.server, {join, {self(), St#client_st.nick}, Channel}) of
         {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St};
         {error, user_already_joined, ErrorMsg} -> {reply, {error, user_already_joined, ErrorMsg}, St};
         Result -> {reply, ok, St#client_st{channelList = [{Channel, Result} | St#client_st.channelList]}}
@@ -78,15 +78,14 @@ handle(St, {leave, Channel}) ->
 handle(St, {message_send, Channel, Msg}) ->
     case catch genserver:request(St#client_st.server, {checkChannel, Channel}) of
             true -> case proplists:lookup(Channel, St#client_st.channelList) of
-                    {Channel, Pid} ->   case catch genserver:request(Pid, {message, self(), St#client_st.nick, Msg}) of
-                                            ok -> {reply, ok, St};
-                                            {error, user_not_joined, ErrorText} -> {reply, {error, user_not_joined, ErrorText}, St};
-                                            {error, server_not_reached, ErrorText} -> {reply, {error, server_not_reached, ErrorText}, St};
-                                            Result -> {reply, {error, server_not_reached, Result}, St}
-                                        end;  
-                    _ ->  {reply, {error, user_not_joined, "User has not joined channel yet"}, St}
-                    end;
-            %{'EXIT', _} -> {reply, {error, server_not_reached, "Server timed"}, St};        
+                        {Channel, Pid} ->   case catch genserver:request(Pid, {message, self(), St#client_st.nick, Msg}) of
+                                ok -> {reply, ok, St};
+                                {error, user_not_joined, ErrorText} -> {reply, {error, user_not_joined, ErrorText}, St};
+                                {error, server_not_reached, ErrorText} -> {reply, {error, server_not_reached, ErrorText}, St};
+                                Result -> {reply, {error, server_not_reached, Result}, St}
+                            end;  
+                        _ ->  {reply, {error, user_not_joined, "User has not joined channel yet"}, St}
+                    end;       
             {'EXIT', _} -> case proplists:lookup(Channel, St#client_st.channelList) of
                                             {Channel, Pid} ->   case catch genserver:request(Pid, {message, self(), St#client_st.nick, Msg}) of
                                                                     {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St};
@@ -96,13 +95,13 @@ handle(St, {message_send, Channel, Msg}) ->
                                         end;    
             false -> {reply, {error, server_not_reached, "No such channel exists"}, St}
     end;
-    
-%
             
 % This case is only relevant for the distinction assignment!
 % Change nick (no check, local only)
-handle(St, {nick, NewNick}) ->
-    {reply, ok, St#client_st{nick = NewNick}};
+handle(St, {nick, NewNick}) -> case genserver:request(St#client_st.server, {nick, St#client_st.nick, NewNick}) of 
+        ok -> {reply, ok, St#client_st{nick = NewNick}};
+        _ -> {reply, {error, nick_taken, "Nick already taken."}, St}
+    end;
 
 % ---------------------------------------------------------------------------
 % The cases below do not need to be changed...

@@ -61,35 +61,35 @@ handle(St, {leave, Channel}) ->
 handle(St, {message_send, Channel, Msg}) ->
     % Checks if channel exists
     case catch genserver:request(St#client_st.server, {checkChannel, Channel}) of
-        % Channel has not yet been created
-        false -> {reply, {error, server_not_reached, "No such channel exists"}, St};
-        % Server is unreachable, and/or channel exists
-        _ -> case proplists:lookup(Channel, St#client_st.channelList) of
-                % Tries to send a message to channel
-                {Channel, Pid} ->   case catch genserver:request(Pid, {message, self(), St#client_st.nick, Msg}) of
-                                        %--------- SUCCESS
-                                        % Succesfully sent a message
-                                        ok -> {reply, ok, St};
-                                        
-                                        %--------- ERRORS 
-                                        % Channel process is unreachable
-                                        {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St};
-                                        % Client not a part of channels member list
-                                        user_not_joined -> {reply, {error, user_not_joined, "User is not part of channel"}, St};
-                                        % Sent an invalid request to channel
-                                        server_not_reached -> {reply, server_not_reached, "not a valid channel request"};
-                                        % Error code catch-all
-                                        Result -> {reply, Result, St}
-                                    end;
-                    _ ->  {reply, {error, user_not_joined, "User has not joined channel yet"}, St}
-             end
+            % Channel has not yet been created
+            false -> {reply, {error, server_not_reached, "No such channel exists"}, St};
+            % Server is unreachable, and/or channel exists
+            _ -> case proplists:lookup(Channel, St#client_st.channelList) of
+                                            % Tries to send a message to channel
+                                            {Channel, Pid} ->   case catch genserver:request(Pid, {message, self(), St#client_st.nick, Msg}) of
+                                                                    %--------- SUCCESS
+                                                                    % Succesfully sent a message
+                                                                    ok -> {reply, ok, St};
+                                                                    
+                                                                    %--------- ERRORS 
+                                                                    % Channel process is unreachable
+                                                                    {'EXIT', Reason} -> {reply, {error, server_not_reached, Reason}, St};
+                                                                    % Client not a part of channels member list
+                                                                    user_not_joined -> {reply, {error, user_not_joined, "User is not part of channel"}, St};
+                                                                    % Sent an invalid request to channel
+                                                                    server_not_reached -> {reply, server_not_reached, "not a valid channel request"};
+                                                                    % Error code catch-all
+                                                                    Result -> {reply, Result, St}
+                                                                end;
+                                                _ ->  {reply, {error, user_not_joined, "User has not joined channel yet"}, St}
+                                        end
     end;
             
 % This case is only relevant for the distinction assignment!
 % Change nick (no check, local only)
 handle(St, {nick, NewNick}) -> 
 % Tries to change nick
-    case genserver:request(St#client_st.server, {nick, St#client_st.nick, NewNick}) of 
+case genserver:request(St#client_st.server, {nick, St#client_st.nick, NewNick}) of 
         %--------- SUCCESS
         % Successfully changed nick
         ok -> {reply, ok, St#client_st{nick = NewNick}};
